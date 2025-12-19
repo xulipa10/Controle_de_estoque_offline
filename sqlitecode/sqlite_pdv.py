@@ -1,5 +1,6 @@
 import sys
-import os
+
+import sqlite3
 from datetime import datetime
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel,
@@ -8,97 +9,162 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
-from openpyxl import load_workbook, Workbook
-
-ARQUIVO_EXCEL = "Produtos.xlsx"
-
-ARQUIVO_VENDAS = "Vendas.xlsx"
 
 
-# ===================== GERENCIADOR DE PRODUTOS =====================
+DB_PATH = "Data.db"
+
+
+# ===================== GERENCIADOR DE PRODUTOS (SQLITE) =====================
 class ProdutoDB:
-    def __init__(self, arquivo):
-        self.arquivo = arquivo
-        if not os.path.exists(self.arquivo):
-            self.criar_arquivo()
+    def __init__(self, db_path):
+        self.db_path = db_path
+        self._init_db()
 
-    def criar_arquivo(self):
-        wb = Workbook()
-        ws = wb.active
-        ws.append(["codigo", "nome", "quantidade", "custo", "venda"])
-        wb.save(self.arquivo)
+    def _connect(self):
+        return sqlite3.connect(self.db_path)
 
-    def carregar(self):
-        wb = load_workbook(self.arquivo)
-        ws = wb.active
-        produtos = []
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            produtos.append({
-                "codigo": str(row[0]),
-                "nome": row[1],
-                "quantidade": row[2],
-                "custo": row[3],
-                "venda": row[4]
-            })
-        return produtos
+    def _init_db(self):
+        with self._connect() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS produtos (
+                    codigo TEXT PRIMARY KEY,
+                    nome TEXT NOT NULL,
+                    quantidade INTEGER NOT NULL,
+                    custo REAL NOT NULL,
+                    venda REAL NOT NULL
+                )
+            """)
 
     def buscar_por_codigo(self, codigo):
-        for p in self.carregar():
-            if p["codigo"] == codigo:
-                return p
+        with self._connect() as conn:
+            cur = conn.execute(
+                "SELECT codigo, nome, quantidade, custo, venda FROM produtos WHERE codigo = ?",
+                (codigo,)
+            )
+            row = cur.fetchone()
+            if row:
+                return {
+                    "codigo": row[0],
+                    "nome": row[1],
+                    "quantidade": row[2],
+                    "custo": row[3],
+                    "venda": row[4]
+                }
         return None
 
 
-
-
+# ===================== GERENCIADOR DE VENDAS (SQLITE) =====================
 class VendaDB:
-    def __init__(self, arquivo):
-        self.arquivo = arquivo
-        if not os.path.exists(self.arquivo):
-            self.criar_arquivo()
+    def __init__(self, db_path):
+        self.db_path = db_path
+        self._init_db()
 
-    def criar_arquivo(self):
-        wb = Workbook()
+    def _connect(self):
+        return sqlite3.connect(self.db_path)
 
-        ws_vendas = wb.active
-        ws_vendas.title = "vendas"
-        ws_vendas.append(["id", "data", "hora", "total", "pagamento"])
+    def _init_db(self):
+        with self._connect() as conn:
+            conn.execute("""
+                         CREATE TABLE IF NOT EXISTS vendas
+                         (
+                             id
+                             INTEGER
+                             PRIMARY
+                             KEY
+                             AUTOINCREMENT,
+                             data
+                             TEXT,
+                             hora
+                             TEXT,
+                             total
+                             REAL
+                         )
+                         """)
+            conn.execute("""
+                         CREATE TABLE IF NOT EXISTS itens_venda
+                         (
+                             id
+                             INTEGER
+                             PRIMARY
+                             KEY
+                             AUTOINCREMENT,
+                             venda_id
+                             INTEGER,
+                             codigo
+                             TEXT,
+                             descricao
+                             TEXT,
+                             quantidade
+                             INTEGER,
+                             unitario
+                             REAL,
+                             total
+                             REAL
+                         )
+                         """)
+            conn.execute("""
+                         CREATE TABLE IF NOT EXISTS pagamentos_venda
+                         (
+                             id
+                             INTEGER
+                             PRIMARY
+                             KEY
+                             AUTOINCREMENT,
+                             venda_id
+                             INTEGER,
+                             forma
+                             TEXT,
+                             valor
+                             REAL
+                         )
+                         """)
 
-        ws_itens = wb.create_sheet("itens")
-        ws_itens.append([
-            "venda_id", "codigo", "descricao",
-            "quantidade", "unitario", "total"
-        ])
-
-        wb.save(self.arquivo)
-
-    def salvar_venda(self, total, pagamento, itens):
-        wb = load_workbook(self.arquivo)
-        ws_vendas = wb["vendas"]
-        ws_itens = wb["itens"]
-
-        venda_id = ws_vendas.max_row
+    def salvar_venda(self, total, itens, pagamentos):
         now = datetime.now()
 
-        ws_vendas.append([
-            venda_id,
-            now.strftime("%d/%m/%Y"),
-            now.strftime("%H:%M:%S"),
-            total,
-            pagamento
-        ])
+        with self._connect() as conn:
+            cur = conn.cursor()
 
-        for item in itens:
-            ws_itens.append([
-                venda_id,
-                item["codigo"],
-                item["descricao"],
-                item["qtd"],
-                item["unit"],
-                item["total"]
-            ])
+            # salva venda
+            cur.execute("""
+                        INSERT INTO vendas (data, hora, total)
+                        VALUES (?, ?, ?)
+                        """, (
+                            now.strftime("%d/%m/%Y"),
+                            now.strftime("%H:%M:%S"),
+                            total
+                        ))
 
-        wb.save(self.arquivo)
+            venda_id = cur.lastrowid
+
+            # salva itens
+            for item in itens:
+                cur.execute("""
+                            INSERT INTO itens_venda (venda_id, codigo, descricao,
+                                                     quantidade, unitario, total)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            """, (
+                                venda_id,
+                                item["codigo"],
+                                item["descricao"],
+                                item["qtd"],
+                                item["unit"],
+                                item["total"]
+                            ))
+
+            # salva pagamentos
+            for pagamento in pagamentos:
+                cur.execute("""
+                            INSERT INTO pagamentos_venda (venda_id, forma, valor)
+                            VALUES (?, ?, ?)
+                            """, (
+                                venda_id,
+                                pagamento["forma"],
+                                pagamento["valor"]
+                            ))
+
+            conn.commit()
+
 
 # ===================== PDV =====================
 class PDV(QMainWindow):
@@ -112,13 +178,15 @@ class PDV(QMainWindow):
             "PIX"
         ]
 
+        self.pagamentos = []  # lista de {"forma": str, "valor": float}
         self.pagamento_selecionado = None
         self.valor_recebido = 0.0
         self.troco = 0.0
         self.total_value = 0  # valor total da venda
+        self.pagamento_iniciado = False
 
-        self.venda_db = VendaDB(ARQUIVO_VENDAS)
-        self.db = ProdutoDB(ARQUIVO_EXCEL)
+        self.venda_db = VendaDB(DB_PATH)
+        self.db = ProdutoDB(DB_PATH)
 
         self.setWindowTitle("PDV Expresso")
         self.resize(1366, 768)
@@ -254,43 +322,37 @@ class PDV(QMainWindow):
         return lambda: self.handle_function(func_number)
 
     def update_display_total(self):
-        if self.pagamento_selecionado == "Dinheiro" and self.valor_recebido > 0:
-            diferenca = self.valor_recebido - self.total_value
 
-            if diferenca < 0:
-                falta = abs(diferenca)
-                valor = f"{falta:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                self.total_label.setText(f"FALTA: R$ {valor}")
-                self.total_label.setStyleSheet("""
-                    font-size: 50px;
-                    font-weight: bold;
-                    color: #d32f2f;  /* vermelho */
-                    padding-right: 20px;
-                    background-color: #e0e0e0;
-                    border-radius: 8px;
-                """)
-            else:
-                troco = diferenca
-                valor = f"{troco:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                self.total_label.setText(f"TROCO: R$ {valor}")
-                self.total_label.setStyleSheet("""
-                    font-size: 50px;
-                    font-weight: bold;
-                    color: #2e7d32;  /* verde */
-                    padding-right: 20px;
-                    background-color: #e0e0e0;
-                    border-radius: 8px;
-                """)
-        else:
+        if not self.pagamento_iniciado:
+            self.update_total()
+            return
+
+        pago = sum(p["valor"] for p in self.pagamentos)
+        restante = self.total_value - pago
+
+        if restante > 0:
+            valor = f"{restante:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            self.total_label.setText(f"FALTA: R$ {valor}")
             self.total_label.setStyleSheet("""
                 font-size: 50px;
                 font-weight: bold;
-                color: #1e88e5;
+                color: #d32f2f;
                 padding-right: 20px;
                 background-color: #e0e0e0;
                 border-radius: 8px;
             """)
-            self.update_total()
+        else:
+            troco = abs(restante)
+            valor = f"{troco:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            self.total_label.setText(f"TROCO: R$ {valor}")
+            self.total_label.setStyleSheet("""
+                font-size: 50px;
+                font-weight: bold;
+                color: #2e7d32;
+                padding-right: 20px;
+                background-color: #e0e0e0;
+                border-radius: 8px;
+            """)
 
     # ================= Verifica multiplicador inline =================
     def check_multiplier_inline(self, text):
@@ -429,6 +491,8 @@ class PDV(QMainWindow):
             border-radius: 8px;
         """)
         self.update_total()
+        self.pagamento_iniciado = False
+        self.pagamentos.clear()
 
     def toggle_fullscreen(self):
         if self.is_fullscreen:
@@ -459,6 +523,8 @@ class PDV(QMainWindow):
             if ok:
                 self.cancel_item_by_number(item_number)
         elif func == 6:
+
+
             if self.table.rowCount() == 0:
                 self.show_message("Nenhuma venda em andamento")
                 return
@@ -475,32 +541,42 @@ class PDV(QMainWindow):
             if not ok:
                 return
 
-            self.pagamento_selecionado = pagamento
-            self.troco = 0
+            restante = self.total_value - sum(p["valor"] for p in self.pagamentos)
+
+            if restante <= 0:
+                QMessageBox.information(self, "Pagamento", "Venda já paga")
+                return
 
             if pagamento == "Dinheiro":
-                restante = self.total_value - self.valor_recebido
+                max_valor = 999999.99  # permite troco
+            else:
+                max_valor = restante  # cartão / pix
 
-                valor, ok = QInputDialog.getDouble(
-                    self,
-                    "Pagamento em Dinheiro",
-                    f"Total da venda: R$ {self.total_value:,.2f}\n"
-                    f"Já recebido: R$ {self.valor_recebido:,.2f}\n"
-                    f"Falta pagar: R$ {restante:,.2f}\n"
-                    "Informe o valor recebido agora:",
-                    0, 0, 999999, 2
-                )
+            valor, ok = QInputDialog.getDouble(
+                self,
+                "Pagamento",
+                f"Total: R$ {self.total_value:,.2f}\n"
+                f"Já pago: R$ {self.total_value - restante:,.2f}\n"
+                f"Restante: R$ {restante:,.2f}\n"
+                "Informe o valor:",
+                restante,
+                0,
+                max_valor,
+                2
+            )
 
-                if not ok:
-                    return
+            if not ok or valor <= 0:
+                return
 
-                # ✅ soma apenas uma vez
-                self.valor_recebido += valor
+            self.pagamentos.append({
+                "forma": pagamento,
+                "valor": valor
+            })
 
-                # ✅ atualiza corretamente FALTA / TROCO
-                self.update_display_total()
+            self.show_message(f"Pagamento {pagamento}: R$ {valor:,.2f}")
+            self.pagamento_iniciado = True
+            self.update_display_total()
 
-                self.show_message("Pagamento em dinheiro")
 
 
 
@@ -513,19 +589,10 @@ class PDV(QMainWindow):
                 self.show_message("Nenhuma venda para finalizar")
                 return
 
-            if not self.pagamento_selecionado:
-                QMessageBox.warning(self, "Pagamento", "Selecione a forma de pagamento (F6)")
+            total_pago = sum(p["valor"] for p in self.pagamentos)
+            if total_pago < self.total_value:
+                QMessageBox.warning(self, "Pagamento", "Pagamento insuficiente")
                 return
-
-            if self.pagamento_selecionado == "Dinheiro":
-                if self.valor_recebido < self.total_value:
-                    falta = self.total_value - self.valor_recebido
-                    QMessageBox.warning(
-                        self,
-                        "Pagamento insuficiente",
-                        f"Falta R$ {falta:,.2f} para concluir a venda"
-                    )
-                    return
 
             itens = []
             for row in range(self.table.rowCount()):
@@ -539,8 +606,8 @@ class PDV(QMainWindow):
 
             self.venda_db.salvar_venda(
                 total=self.total_value,
-                pagamento=self.pagamento_selecionado,
-                itens=itens
+                itens=itens,
+                pagamentos=self.pagamentos
             )
 
             self.show_message("Venda finalizada com sucesso")
