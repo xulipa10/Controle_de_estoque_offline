@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel,
     QVBoxLayout, QPushButton, QTableWidget,
     QTableWidgetItem, QLineEdit, QFormLayout,
-    QDialog, QMessageBox, QHBoxLayout
+    QDialog, QMessageBox, QHBoxLayout, QCheckBox
 )
 from PySide6.QtCore import Qt
 
@@ -23,20 +23,23 @@ class ProdutoDB:
     def _init_db(self):
         with self._connect() as conn:
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS produtos (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    codigo TEXT UNIQUE NOT NULL,
-                    nome TEXT NOT NULL,
-                    quantidade INTEGER NOT NULL,
-                    custo REAL NOT NULL,
-                    venda REAL NOT NULL
-                )
-            """)
+                         CREATE TABLE IF NOT EXISTS produtos
+                         (
+                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                             codigo TEXT UNIQUE NOT NULL,
+                             nome TEXT NOT NULL,
+                             quantidade REAL NOT NULL,
+                             custo REAL NOT NULL,
+                             venda REAL NOT NULL,
+                             por_peso INTEGER DEFAULT 0
+                         )
+                         """)
 
     def carregar(self):
         with self._connect() as conn:
             cur = conn.execute(
-                "SELECT codigo, nome, quantidade, custo, venda FROM produtos"
+                "SELECT codigo, nome, quantidade, custo, venda, por_peso FROM produtos"
+
             )
             return [
                 {
@@ -44,7 +47,8 @@ class ProdutoDB:
                     "nome": row[1],
                     "quantidade": row[2],
                     "custo": row[3],
-                    "venda": row[4]
+                    "venda": row[4],
+                    "por_peso": row[5]
                 }
                 for row in cur.fetchall()
             ]
@@ -52,7 +56,7 @@ class ProdutoDB:
     def buscar_por_codigo(self, codigo):
         with self._connect() as conn:
             cur = conn.execute(
-                "SELECT codigo, nome, quantidade, custo, venda FROM produtos WHERE codigo = ?",
+                "SELECT codigo, nome, quantidade, custo, venda, por_peso FROM produtos WHERE codigo = ?",
                 (codigo,)
             )
             row = cur.fetchone()
@@ -63,14 +67,15 @@ class ProdutoDB:
                 "nome": row[1],
                 "quantidade": row[2],
                 "custo": row[3],
-                "venda": row[4]
+                "venda": row[4],
+                "por_peso": row[5]
             }
 
     def buscar_por_nome(self, nome):
         with self._connect() as conn:
             cur = conn.execute(
                 """
-                SELECT codigo, nome, quantidade, custo, venda
+                SELECT codigo, nome, quantidade, custo, venda, por_peso
                 FROM produtos
                 WHERE nome LIKE ?
                 """,
@@ -82,7 +87,8 @@ class ProdutoDB:
                     "nome": row[1],
                     "quantidade": row[2],
                     "custo": row[3],
-                    "venda": row[4]
+                    "venda": row[4],
+                    "por_peso": row[5]
                 }
                 for row in cur.fetchall()
             ]
@@ -106,7 +112,7 @@ class ProdutoDB:
                     conn.execute(
                         """
                         UPDATE produtos
-                        SET nome = ?, quantidade = ?, custo = ?, venda = ?
+                        SET nome = ?, quantidade = ?, custo = ?, venda = ?, por_peso = ?
                         WHERE codigo = ?
                         """,
                         (
@@ -114,21 +120,23 @@ class ProdutoDB:
                             produto["quantidade"],
                             produto["custo"],
                             produto["venda"],
-                            produto["codigo"]
+                            produto["codigo"],
+                            produto["por_peso"]
                         )
                     )
             else:
                 conn.execute(
                     """
-                    INSERT INTO produtos (codigo, nome, quantidade, custo, venda)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO produtos (codigo, nome, quantidade, custo, venda, por_peso)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
                     (
                         produto["codigo"],
                         produto["nome"],
                         produto["quantidade"],
                         produto["custo"],
-                        produto["venda"]
+                        produto["venda"],
+                        produto["por_peso"]
                     )
                 )
 
@@ -142,6 +150,9 @@ class CadastroProduto(QDialog):
         self.setFixedSize(400, 300)
 
         layout = QFormLayout(self)
+
+        self.por_peso = QCheckBox("Produto vendido por peso (kg)")
+        layout.addRow(self.por_peso)
 
         self.codigo = QLineEdit()
         self.nome = QLineEdit()
@@ -164,9 +175,10 @@ class CadastroProduto(QDialog):
             produto = {
                 "codigo": self.codigo.text(),
                 "nome": self.nome.text(),
-                "quantidade": int(self.quantidade.text()),
+                "quantidade": float(self.quantidade.text().replace(",", ".")),
                 "custo": float(self.custo.text()),
-                "venda": float(self.venda.text())
+                "venda": float(self.venda.text()),
+                "por_peso": 1 if self.por_peso.isChecked() else 0
             }
         except ValueError:
             QMessageBox.warning(self, "Erro", "Preencha corretamente os campos numéricos")
@@ -229,7 +241,11 @@ class EntradaProduto(QDialog):
             return
 
         try:
-            qtd = int(self.quantidade.text())
+            if self.produto_atual["por_peso"]:
+                qtd = float(self.quantidade.text().replace(",", "."))
+            else:
+                qtd = float(self.quantidade.text())
+
             if qtd <= 0:
                 raise ValueError
         except ValueError:
@@ -263,10 +279,11 @@ class BuscaProduto(QDialog):
         hbox.addWidget(btn_buscar)
         layout.addLayout(hbox)
 
-        self.table = QTableWidget(0, 5)
+        self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
-            ["Código", "Nome", "Qtd", "Custo", "Venda"]
+            ["Código", "Nome", "Qtd", "Custo", "Venda", "Tipo"]
         )
+
         layout.addWidget(self.table)
 
     def buscar(self):
@@ -289,6 +306,9 @@ class BuscaProduto(QDialog):
             self.table.setItem(row, 2, QTableWidgetItem(str(p["quantidade"])))
             self.table.setItem(row, 3, QTableWidgetItem(str(p["custo"])))
             self.table.setItem(row, 4, QTableWidgetItem(str(p["venda"])))
+
+            peso = "KG" if p["por_peso"] else "UN"
+            self.table.setItem(row, 5, QTableWidgetItem(peso))
 
 
 # ===================== JANELA PRINCIPAL =====================

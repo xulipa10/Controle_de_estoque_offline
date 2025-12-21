@@ -29,16 +29,17 @@ class ProdutoDB:
                 CREATE TABLE IF NOT EXISTS produtos (
                     codigo TEXT PRIMARY KEY,
                     nome TEXT NOT NULL,
-                    quantidade INTEGER NOT NULL,
+                    quantidade REAL NOT NULL,
                     custo REAL NOT NULL,
-                    venda REAL NOT NULL
+                    venda REAL NOT NULL,
+                    por_peso INTEGER DEFAULT 0
                 )
             """)
 
     def buscar_por_codigo(self, codigo):
         with self._connect() as conn:
             cur = conn.execute(
-                "SELECT codigo, nome, quantidade, custo, venda FROM produtos WHERE codigo = ?",
+                "SELECT codigo, nome, quantidade, custo, venda, por_peso FROM produtos WHERE codigo = ?",
                 (codigo,)
             )
             row = cur.fetchone()
@@ -48,7 +49,8 @@ class ProdutoDB:
                     "nome": row[1],
                     "quantidade": row[2],
                     "custo": row[3],
-                    "venda": row[4]
+                    "venda": row[4],
+                    "por_peso": bool(row[5])
                 }
         return None
 
@@ -267,6 +269,7 @@ class PDV(QMainWindow):
 
         # Caixa de multiplicador
         self.qty_input = QLineEdit()
+        self.qty_input.setPlaceholderText("Qtd")
         self.qty_input.setFixedHeight(40)
         self.qty_input.setFixedWidth(60)
         self.qty_input.setText("1")  # valor padrão 1
@@ -367,8 +370,12 @@ class PDV(QMainWindow):
             self.barcode_input.clear()
 
     def handle_barcode(self):
-        code = self.barcode_input.text().strip()
+        texto = self.barcode_input.text().strip()
 
+        if not texto:
+            return
+
+        # mantém sua regra de venda bloqueada
         if self.venda_bloqueada():
             QMessageBox.warning(
                 self,
@@ -378,24 +385,61 @@ class PDV(QMainWindow):
             self.barcode_input.clear()
             return
 
-        if not code:
+        qtd = 1.0
+        codigo = texto
+
+        #  NOVO PADRÃO: PESO/CODIGO
+        if "/" in texto:
+            try:
+                peso_str, codigo = texto.split("/", 1)
+                qtd = float(peso_str.replace(",", "."))
+                if qtd <= 0:
+                    raise ValueError
+            except ValueError:
+                QMessageBox.warning(
+                    self,
+                    "Formato inválido",
+                    "Use o formato: 0.500/CODIGO"
+                )
+                self.barcode_input.clear()
+                return
+        else:
+            # leitura do multiplicador normal
+            try:
+                qtd = float(self.qty_input.text().replace(",", "."))
+                if qtd <= 0:
+                    qtd = 1
+            except ValueError:
+                qtd = 1
+
+        produto = self.db.buscar_por_codigo(codigo)
+
+        if not produto:
+            QMessageBox.warning(self, "Produto não encontrado", f"Código: {codigo}")
+            self.barcode_input.clear()
             return
 
-        try:
-            qty = int(self.qty_input.text())
-            if qty < 1:
-                qty = 1
-        except ValueError:
-            qty = 1
+        # REGRA DE NEGÓCIO CRÍTICA
+        if not produto["por_peso"] and not qtd.is_integer():
+            QMessageBox.warning(
+                self,
+                "Produto unitário",
+                "Este produto não pode ser vendido fracionado"
+            )
+            self.qty_input.setText("1")
+            self.barcode_input.clear()
+            return
 
-        produto = self.db.buscar_por_codigo(code)
-        if produto:
-            self.add_item(produto["codigo"], produto["nome"], qty, produto["venda"])
-        else:
-            QMessageBox.warning(self, "Produto não encontrado", f"Código: {code}")
+        self.add_item(
+            produto["codigo"],
+            produto["nome"],
+            qtd,
+            produto["venda"]
+        )
 
+        # reset
         self.barcode_input.clear()
-        self.qty_input.setText("1")  # reseta multiplicador
+        self.qty_input.setText("1")
 
     # ================= Lógica de Adição/Cancelamento =================
     def add_item(self, code, desc, qty, price):
@@ -415,16 +459,19 @@ class PDV(QMainWindow):
         self.table.setItem(row, 0, QTableWidgetItem(str(row + 1)))  # Número do item
         self.table.setItem(row, 1, QTableWidgetItem(code))
         self.table.setItem(row, 2, QTableWidgetItem(desc))
-        self.table.setItem(row, 3, QTableWidgetItem(str(qty)))
+
+        qtd_txt = f"{qty:.3f}" if isinstance(qty, float) else str(qty)
+
+        self.table.setItem(row, 3, QTableWidgetItem(qtd_txt))
         self.table.setItem(row, 4, QTableWidgetItem(f"{price:.2f}"))
         self.table.setItem(row, 5, QTableWidgetItem(f"{total:.2f}"))
+
         for i in range(0,6):
             if i != 2:
                 self.table.item(row,i).setTextAlignment(Qt.AlignCenter)
 
         self.total_value += total
         self.update_display_total()
-
 
     def cancel_item_by_number(self, item_number):
         if self.venda_bloqueada():
@@ -599,7 +646,7 @@ class PDV(QMainWindow):
                 itens.append({
                     "codigo": self.table.item(row, 1).text(),
                     "descricao": self.table.item(row, 2).text(),
-                    "qtd": int(self.table.item(row, 3).text()),
+                    "qtd": float(self.table.item(row, 3).text()),
                     "unit": float(self.table.item(row, 4).text()),
                     "total": float(self.table.item(row, 5).text())
                 })
@@ -609,6 +656,20 @@ class PDV(QMainWindow):
                 itens=itens,
                 pagamentos=self.pagamentos
             )
+
+            # baixa de produtos
+            with self.db._connect() as conn:
+                cur = conn.cursor()
+                for item in itens:
+                    cur.execute(
+                        """
+                        UPDATE produtos
+                        SET quantidade = quantidade - ?
+                        WHERE codigo = ?
+                        """,
+                        (item["qtd"], item["codigo"])
+                    )
+                conn.commit()
 
             self.show_message("Venda finalizada com sucesso")
 
