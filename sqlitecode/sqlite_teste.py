@@ -2,10 +2,12 @@ import sys
 
 import sqlite3
 from datetime import datetime
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel,
     QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QLineEdit, QPushButton, QGridLayout, QMessageBox, QInputDialog
+    QLineEdit, QPushButton, QGridLayout, QMessageBox,
+    QInputDialog
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
@@ -236,17 +238,20 @@ class PDV(QMainWindow):
 
         center_layout.addWidget(self.table, 5)
 
-        # Logo
-        self.logo = QLabel("PDV\nEXPRESSO")
+        # Logo (imagem)
+        self.logo = QLabel()
         self.logo.setAlignment(Qt.AlignCenter)
-        self.logo.setStyleSheet("""
-            font-size: 34px;
-            font-weight: bold;
-            color: #1e88e5;
-        """)
+
+        pixmap = QPixmap("logo2.png")  # caminho da imagem
+        self.logo.setPixmap(
+            pixmap.scaled(
+                300, 300,  # tamanho máximo
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            )
+        )
+
         center_layout.addWidget(self.logo, 2)
-
-
 
         main_layout.addLayout(center_layout)
 
