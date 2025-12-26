@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel,
     QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QLineEdit, QPushButton, QGridLayout, QMessageBox,
-    QInputDialog
+    QInputDialog, QStackedLayout
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
@@ -172,8 +172,15 @@ class VendaDB:
 
 # ===================== PDV =====================
 class PDV(QMainWindow):
-    def __init__(self):
+    def __init__(self, nome_operador):
         super().__init__()
+
+        self.setAttribute(Qt.WA_DeleteOnClose)  # Destruir tela ao fechar
+
+        self.venda_aberta = False
+        self.venda_id_atual = None  # futuro: venda suspensa
+
+        self.operador = nome_operador
 
         self.MODOS_PAGAMENTO = [
             "Dinheiro",
@@ -223,6 +230,29 @@ class PDV(QMainWindow):
 
         center_layout.addSpacing(150)
 
+        self.stack = QStackedLayout()
+
+        # -------- Tela CAIXA LIVRE --------
+        self.caixa_livre_label = QLabel("CAIXA LIVRE")
+        self.caixa_livre_label.setAlignment(Qt.AlignCenter)
+        self.caixa_livre_label.setStyleSheet("""
+            font-size: 80px;
+            font-weight: bold;
+            color: #00000;
+        """)
+
+        caixa_livre_widget = QWidget()
+        layout_caixa = QVBoxLayout(caixa_livre_widget)
+        layout_caixa.addStretch()
+        layout_caixa.addWidget(self.caixa_livre_label)
+        layout_caixa.addStretch()
+
+        self.stack.addWidget(caixa_livre_widget)  # índice 0
+
+
+
+
+
         # Tabela de Itens
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
@@ -236,7 +266,10 @@ class PDV(QMainWindow):
         self.table.setColumnWidth(2, 350)  # pixels de largura para a coluna "Descrição"
         self.table.setColumnWidth(5, 110)
 
-        center_layout.addWidget(self.table, 5)
+        self.stack.addWidget(self.table)
+
+        center_layout.addLayout(self.stack, 5)
+        self.stack.setCurrentIndex(0)
 
         # Logo (imagem)
         self.logo = QLabel()
@@ -303,8 +336,8 @@ class PDV(QMainWindow):
         func_layout = QGridLayout()
         func_layout.setSpacing(4)
         self.functions = [
-            "F1 Ajuda", "F2 Cliente", "F3 Produto",
-            "F4 Cancelar", "F5 Desconto", "F6 Pagamento",
+            "F1 Abrir Venda", "F2 Ajuda", "F3 Produto",
+            "F4 Cancelar Produto", "F5 Cancelar Venda", "F6 Pagamento",
             "F7", "F8", "F9",
             "F10", "F11 Tela Cheia", "F12 Finalizar"
         ]
@@ -325,6 +358,18 @@ class PDV(QMainWindow):
         for i in range(1, 13):
             shortcut = QShortcut(QKeySequence(f"F{i}"), self)
             shortcut.activated.connect(self.make_function_handler(i))
+
+
+
+    def abrir_venda(self):
+        if self.venda_aberta:
+            QMessageBox.warning(self, "Venda", "Já existe uma venda em andamento")
+            return
+
+        self.reset_venda()
+        self.venda_aberta = True
+        self.stack.setCurrentIndex(1)  # MOSTRA TABELA
+        self.show_message("Venda aberta")
 
     def make_function_handler(self, func_number):
         return lambda: self.handle_function(func_number)
@@ -378,6 +423,15 @@ class PDV(QMainWindow):
         texto = self.barcode_input.text().strip()
 
         if not texto:
+            return
+
+        if not self.venda_aberta:
+            QMessageBox.warning(
+                self,
+                "Venda não iniciada",
+                "Abra uma venda antes de adicionar itens"
+            )
+            self.barcode_input.clear()
             return
 
         # mantém sua regra de venda bloqueada
@@ -446,11 +500,45 @@ class PDV(QMainWindow):
         self.barcode_input.clear()
         self.qty_input.setText("1")
 
+    def cancelar_venda(self):
+        if not self.venda_aberta:
+            QMessageBox.information(
+                self,
+                "Cancelar venda",
+                "Não há venda aberta para cancelar"
+            )
+            return
+
+        if self.table.rowCount() > 0:
+            resp = QMessageBox.question(
+                self,
+                "Cancelar venda",
+                "Deseja realmente cancelar a venda em andamento?\n"
+                "Todos os itens e pagamentos serão perdidos.",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if resp != QMessageBox.Yes:
+                return
+
+        self.reset_venda()
+        self.venda_aberta = False
+        self.stack.setCurrentIndex(0)  # MOSTRA CAIXA LIVRE
+        self.show_message("Venda cancelada")
+
     # ================= Lógica de Adição/Cancelamento =================
     def add_item(self, code, desc, qty, price):
 
         row = self.table.rowCount()
         total = qty * price
+
+        if not self.venda_aberta:
+            QMessageBox.warning(
+                self,
+                "Venda não iniciada",
+                "Abra uma venda antes de adicionar itens"
+            )
+            self.barcode_input.clear()
+            return
 
         if self.venda_bloqueada():
             QMessageBox.warning(
@@ -523,7 +611,7 @@ class PDV(QMainWindow):
 
     def update_clock(self):
         now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        self.top_bar.setText(f"CAIXA LIVRE | OPERADOR: ADMIN | {now}")
+        self.top_bar.setText(f"OPERADOR: {self.operador} | {now}")
 
     def show_message(self, message):
         self.top_bar.setText(f"{message} | {datetime.now().strftime('%H:%M:%S')}")
@@ -557,6 +645,9 @@ class PDV(QMainWindow):
     def handle_function(self, func):
 
         if func == 1:
+            self.abrir_venda()
+
+        elif func == 2:
             self.show_message("Ajuda acionada")
 
         elif self.venda_bloqueada() and func not in (6, 12, 4):
@@ -565,6 +656,7 @@ class PDV(QMainWindow):
 
         elif func == 3:
             self.add_item("123", "Produto Exemplo", 1, 10.00)
+
         elif func == 4:
             if self.table.rowCount() == 0:
                 self.show_message("Nenhum item para cancelar")
@@ -574,8 +666,20 @@ class PDV(QMainWindow):
             )
             if ok:
                 self.cancel_item_by_number(item_number)
+
+        elif func == 5:
+            self.cancelar_venda()
+
         elif func == 6:
 
+            if not self.venda_aberta:
+                QMessageBox.warning(
+                    self,
+                    "Venda não iniciada",
+                    "Abra uma venda antes de adicionar itens"
+                )
+                self.barcode_input.clear()
+                return
 
             if self.table.rowCount() == 0:
                 self.show_message("Nenhuma venda em andamento")
@@ -629,12 +733,9 @@ class PDV(QMainWindow):
             self.pagamento_iniciado = True
             self.update_display_total()
 
-
-
-
-
         elif func == 11:
             self.toggle_fullscreen()
+
         elif func == 12:
 
             if self.table.rowCount() == 0:
@@ -676,20 +777,13 @@ class PDV(QMainWindow):
                     )
                 conn.commit()
 
-            self.show_message("Venda finalizada com sucesso")
 
+            self.venda_aberta = False
+            self.venda_id_atual = None
             self.reset_venda()
+            self.stack.setCurrentIndex(0)  # MOSTRA CAIXA LIVRE
             self.show_message("Venda finalizada com sucesso")
-
-
-
 
         else:
             self.show_message(f"Função F{func}")
 
-# ================= Inicialização =================
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    pdv = PDV()
-    pdv.show()
-    sys.exit(app.exec())

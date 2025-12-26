@@ -17,6 +17,14 @@ class ProdutoDB:
         self.db_path = db_path
         self._init_db()
 
+    def excluir_por_codigo(self, codigo):
+        with self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM produtos WHERE codigo = ?",
+                (codigo,)
+            )
+            return cur.rowcount > 0
+
     def _connect(self):
         return sqlite3.connect(self.db_path)
 
@@ -160,28 +168,63 @@ class CadastroProduto(QDialog):
         self.custo = QLineEdit()
         self.venda = QLineEdit()
 
+
+        self.espaco_vazio = QWidget()
+        self.espaco_vazio.setFixedHeight(60)
+
         layout.addRow("Código:", self.codigo)
         layout.addRow("Nome:", self.nome)
         layout.addRow("Quantidade:", self.quantidade)
         layout.addRow("Valor de Custo:", self.custo)
         layout.addRow("Valor de Venda:", self.venda)
+        layout.addRow(self.espaco_vazio)
 
+        # Botão salvar (SEM comportamento default)
         btn_salvar = QPushButton("Salvar / Atualizar")
+        btn_salvar.setFixedHeight(50)
+        btn_salvar.setStyleSheet("background-color:#0CBDCD; color:white; font-weight:bold;")
+        btn_salvar.setDefault(False)      #  impede Enter
+        btn_salvar.setAutoDefault(False)  # impede submit automático
         btn_salvar.clicked.connect(self.salvar)
         layout.addRow(btn_salvar)
 
+        # Enter apenas navega
+        self.codigo.returnPressed.connect(self.focus_next)
+        self.nome.returnPressed.connect(self.focus_next)
+        self.quantidade.returnPressed.connect(self.focus_next)
+        self.custo.returnPressed.connect(self.focus_next)
+        self.venda.returnPressed.connect(self.focus_next)
+
+    def focus_next(self):
+        self.focusNextChild()
+
     def salvar(self):
         try:
+            if not all([
+                self.codigo.text().strip(),
+                self.nome.text().strip(),
+                self.quantidade.text().strip(),
+                self.custo.text().strip(),
+                self.venda.text().strip()
+            ]):
+                QMessageBox.warning(
+                    self, "Erro", "Todos os campos devem ser preenchidos"
+                )
+                return
+
             produto = {
-                "codigo": self.codigo.text(),
-                "nome": self.nome.text(),
+                "codigo": self.codigo.text().strip(),
+                "nome": self.nome.text().strip(),
                 "quantidade": float(self.quantidade.text().replace(",", ".")),
-                "custo": float(self.custo.text()),
-                "venda": float(self.venda.text()),
+                "custo": float(self.custo.text().replace(",", ".")),
+                "venda": float(self.venda.text().replace(",", ".")),
                 "por_peso": 1 if self.por_peso.isChecked() else 0
             }
+
         except ValueError:
-            QMessageBox.warning(self, "Erro", "Preencha corretamente os campos numéricos")
+            QMessageBox.warning(
+                self, "Erro", "Valores numéricos inválidos"
+            )
             return
 
         self.db.adicionar_ou_atualizar(produto)
@@ -189,13 +232,17 @@ class CadastroProduto(QDialog):
         self.close()
 
 
+
 # ===================== TELA DE ENTRADA =====================
 class EntradaProduto(QDialog):
     def __init__(self, db):
         super().__init__()
+
+        self.setAttribute(Qt.WA_DeleteOnClose) #Destruir tela ao fechar
+
         self.db = db
         self.setWindowTitle("Entrada de Produto")
-        self.setMinimumSize(500, 300)
+        self.setMinimumSize(400, 200)
 
 
         layout = QFormLayout(self)
@@ -206,10 +253,19 @@ class EntradaProduto(QDialog):
         self.codigo = QLineEdit()
         self.quantidade = QLineEdit()
 
+
+        self.espaco_vazio = QWidget()
+        self.espaco_vazio.setFixedHeight(100)
+
+
         layout.addRow("Código:", self.codigo)
         layout.addRow("Quantidade Entrada:", self.quantidade)
+        layout.addRow(self.espaco_vazio)
+
 
         btn = QPushButton("Dar Entrada")
+        btn.setFixedHeight(50)
+        btn.setStyleSheet("background-color:#778D8F; color:white; font-weight:bold;")
         btn.clicked.connect(self.entrada)
         layout.addRow(btn)
 
@@ -311,6 +367,77 @@ class BuscaProduto(QDialog):
             self.table.setItem(row, 5, QTableWidgetItem(peso))
 
 
+# ===================== TELA DE EXCLUSÂO =====================
+class ExcluirProduto(QDialog):
+    def __init__(self, db):
+        super().__init__()
+        self.db = db
+        self.setWindowTitle("Excluir Produto")
+        self.setFixedSize(400, 200)
+
+        layout = QFormLayout(self)
+
+        self.codigo = QLineEdit()
+        self.lbl_produto = QLabel("Produto: ---")
+        self.lbl_produto.setStyleSheet("font-weight:bold;")
+
+        layout.addRow("Código:", self.codigo)
+        layout.addRow(self.lbl_produto)
+
+        btn_excluir = QPushButton("Excluir Produto")
+        btn_excluir.setStyleSheet("background-color:#f44336; color:white; font-weight:bold;")
+        btn_excluir.setAutoDefault(False)
+        btn_excluir.clicked.connect(self.excluir)
+
+        layout.addRow(btn_excluir)
+
+        self.codigo.textChanged.connect(self.buscar_produto)
+        self.produto_atual = None
+
+    def buscar_produto(self):
+        codigo = self.codigo.text().strip()
+
+        if not codigo:
+            self.lbl_produto.setText("Produto: ---")
+            self.produto_atual = None
+            return
+
+        produto = self.db.buscar_por_codigo(codigo)
+
+        if produto:
+            self.produto_atual = produto
+            self.lbl_produto.setText(
+                f'{produto["nome"]} | Estoque: {produto["quantidade"]}'
+            )
+        else:
+            self.lbl_produto.setText("Produto não encontrado")
+            self.produto_atual = None
+
+    def excluir(self):
+        if not self.produto_atual:
+            QMessageBox.warning(self, "Erro", "Produto inválido ou não encontrado")
+            return
+
+        resposta = QMessageBox.question(
+            self,
+            "Confirmação",
+            f'Deseja realmente excluir o produto "{self.produto_atual["nome"]}"?',
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if resposta != QMessageBox.Yes:
+            return
+
+        sucesso = self.db.excluir_por_codigo(self.produto_atual["codigo"])
+
+        if sucesso:
+            QMessageBox.information(self, "OK", "Produto excluído com sucesso")
+            self.close()
+        else:
+            QMessageBox.warning(self, "Erro", "Falha ao excluir o produto")
+
+
+
 # ===================== JANELA PRINCIPAL =====================
 class EstoqueApp(QMainWindow):
     def __init__(self):
@@ -323,6 +450,11 @@ class EstoqueApp(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
 
+        btn_exc = QPushButton("Excluir Produto")
+        btn_exc.setFixedHeight(50)
+        btn_exc.setStyleSheet("background-color:#9C27B0; color:white; font-weight:bold;")
+        btn_exc.clicked.connect(lambda: ExcluirProduto(self.db).exec())
+
         layout = QVBoxLayout(central)
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
@@ -332,7 +464,7 @@ class EstoqueApp(QMainWindow):
         lbl.setStyleSheet("font-size:22px; font-weight:bold;")
         layout.addWidget(lbl)
 
-        grid = QHBoxLayout()
+        grid = QVBoxLayout()
         layout.addLayout(grid)
 
         btn_cad = QPushButton("Cadastro / Alteração")
@@ -355,21 +487,20 @@ class EstoqueApp(QMainWindow):
         btn_sair.setStyleSheet("background-color:#f44336; color:white; font-weight:bold;")
         btn_sair.clicked.connect(self.close)
 
-        col1 = QVBoxLayout()
+        col1 = QHBoxLayout()
         col1.addWidget(btn_cad)
         col1.addWidget(btn_ent)
 
-        col2 = QVBoxLayout()
+        col2 = QHBoxLayout()
         col2.addWidget(btn_bus)
-        col2.addWidget(btn_sair)
+        col2.addWidget(btn_exc)
+
+        col3 = QHBoxLayout()
+        col3.addWidget(btn_sair)
 
         grid.addLayout(col1)
         grid.addLayout(col2)
+        grid.addLayout(col3)
 
 
-# ===================== MAIN =====================
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = EstoqueApp()
-    window.show()
-    sys.exit(app.exec())
+
