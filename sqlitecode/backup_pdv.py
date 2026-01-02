@@ -1,6 +1,5 @@
+import sys
 
-from printer import load_config
-from printer import CupomPrinter
 import sqlite3
 from datetime import datetime
 from PySide6.QtGui import QPixmap
@@ -175,8 +174,6 @@ class VendaDB:
 class PDV(QMainWindow):
     def __init__(self, nome_operador):
         super().__init__()
-
-        self.config = load_config()
 
         self.setAttribute(Qt.WA_DeleteOnClose)  # Destruir tela ao fechar
 
@@ -780,44 +777,6 @@ class PDV(QMainWindow):
                     )
                 conn.commit()
 
-                # Area para tentar imprimir cupom
-
-
-            resp = QMessageBox.question(
-                self,
-                "Impressão de Cupom",
-                "Deseja imprimir o cupom?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes
-            )
-
-            if resp == QMessageBox.Yes:
-                try:
-                    printer_name = self.config.get("printer_name")
-                    paper_mm = int(self.config.get("paper_mm", 58))
-
-                    if not printer_name:
-                        raise Exception("Impressora não configurada")
-
-                    printer = CupomPrinter(
-                        printer_name=printer_name,
-                        paper_mm=paper_mm
-                    )
-
-                    printer.imprimir(
-                        operador=self.operador,
-                        table=self.table,
-                        total=self.total_value,
-                        pagamentos=self.pagamentos,
-                        db=self.db
-                    )
-
-                except Exception as e:
-                    QMessageBox.warning(
-                        self,
-                        "Impressão",
-                        f"Cupom não impresso:\n{str(e)}"
-                    )
 
             self.venda_aberta = False
             self.venda_id_atual = None
