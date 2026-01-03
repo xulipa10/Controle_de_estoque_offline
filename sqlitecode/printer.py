@@ -160,7 +160,127 @@ class CupomPrinter:
 
         self._raw_print("".join(txt))
 
+    def imprimir_fechamento(self, operador, vendido, informado, sangrias):
 
+        from datetime import datetime
+
+        cols = self.cols
+        line = "=" * cols
+        sep = "-" * cols
+
+        def fmt(v):
+            return self._money(v).rjust(10)
+
+        now = datetime.now()
+
+        txt = []
+
+        # ---------- CABEÇALHO ----------
+        txt.append(line + "\n")
+        txt.append("FECHAMENTO DE CAIXA".center(cols) + "\n")
+        txt.append(line + "\n")
+
+        txt.append(f"OPERADOR : {operador}\n")
+        txt.append(f"DATA     : {now.strftime('%d/%m/%Y')}\n")
+        txt.append(f"HORA     : {now.strftime('%H:%M:%S')}\n")
+
+        txt.append(sep + "\n")
+
+        # ---------- TABELA ----------
+        txt.append(
+            "FORMA".ljust(12) +
+            "VENDIDO".rjust(10) +
+            "INFORM.".rjust(10) +
+            "\n"
+        )
+        txt.append(sep + "\n")
+
+        for key, label in [
+            ("dinheiro", "DINHEIRO"),
+            ("credito", "CRÉDITO"),
+            ("debito", "DÉBITO"),
+            ("pix", "PIX")
+        ]:
+            v = vendido[key]
+            i = informado[key]
+            d = i - v
+
+            txt.append(
+                label.ljust(12) +
+                fmt(v) +
+                fmt(i) +
+                "\n"
+            )
+            txt.append(
+                "DIFERENÇA:".ljust(12) +
+                fmt(d) +
+                "\n\n"
+            )
+
+        if sangrias:
+            txt.append(sep + "\n")
+            txt.append("SANGRIAS REALIZADAS\n")
+
+            total_sangria = 0
+            for data, valor, motivo in sangrias:
+                total_sangria += valor
+                txt.append(f"{data[:10]}  {self._money(valor)}\n")
+                if motivo:
+                    txt.append(f"  {motivo[:cols]}\n")
+
+            txt.append(sep + "\n")
+            txt.append(f"TOTAL SANGRIA: {self._money(total_sangria)}\n")
+
+        # ---------- RODAPÉ ----------
+        txt.append(sep + "\n")
+        txt.append("ASSINATURA OPERADOR:\n\n")
+        txt.append("_" * cols + "\n\n")
+        txt.append("STATUS: CAIXA FECHADO\n")
+        txt.append(line + "\n\n")
+
+        # corte de papel
+        txt.append("\x1dV\x00")
+
+        self._raw_print("".join(txt))
+
+    def imprimir_sangria(self, operador, valor, motivo=""):
+        from datetime import datetime
+
+        cols = self.cols
+        line = "=" * cols
+        sep = "-" * cols
+
+        now = datetime.now()
+
+        txt = []
+
+        txt.append(line + "\n")
+        txt.append("COMPROVANTE DE SANGRIA".center(cols) + "\n")
+        txt.append(line + "\n")
+
+        txt.append(f"OPERADOR : {operador}\n")
+        txt.append(f"DATA     : {now.strftime('%d/%m/%Y')}\n")
+        txt.append(f"HORA     : {now.strftime('%H:%M:%S')}\n")
+        txt.append(sep + "\n")
+
+        txt.append("VALOR DA SANGRIA:\n")
+        txt.append(f"R$ {self._money(valor).rjust(cols - 3)}\n\n")
+
+        if motivo:
+            txt.append("MOTIVO:\n")
+            txt.append(motivo[:cols] + "\n\n")
+
+        txt.append(sep + "\n")
+        txt.append("ASSINATURA DO RESPONSÁVEL:\n\n")
+        txt.append("_" * cols + "\n\n")
+
+        txt.append("DOCUMENTO NAO FISCAL\n")
+        txt.append(line + "\n\n")
+
+        # corte de papel
+        txt.append("\x1dV\x00")
+
+        self._raw_print("".join(txt))
 
 # teste da impressora
 # from printer import CupomPrinter

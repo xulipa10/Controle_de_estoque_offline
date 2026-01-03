@@ -1,6 +1,6 @@
 
 from printer import load_config
-from printer import CupomPrinter
+from fechamento import CaixaDB, FechamentoDialog, SangriaDialog
 import sqlite3
 from datetime import datetime
 from PySide6.QtGui import QPixmap
@@ -184,6 +184,8 @@ class PDV(QMainWindow):
         self.venda_id_atual = None  # futuro: venda suspensa
 
         self.operador = nome_operador
+        self.caixa_db = CaixaDB()
+        self.caixa_id = self.caixa_db.abrir_caixa(self.operador)
 
         self.MODOS_PAGAMENTO = [
             "Dinheiro",
@@ -341,8 +343,8 @@ class PDV(QMainWindow):
         self.functions = [
             "F1 Abrir Venda", "F2 Ajuda", "F3 Produto",
             "F4 Cancelar Produto", "F5 Cancelar Venda", "F6 Pagamento",
-            "F7", "F8", "F9",
-            "F10", "F11 Tela Cheia", "F12 Finalizar"
+            "F7", "F8", "F9 Sangria",
+            "F10 Fechar Caixa", "F11 Tela Cheia", "F12 Finalizar"
         ]
         for col, text in enumerate(self.functions):
             btn = QPushButton(text)
@@ -736,6 +738,77 @@ class PDV(QMainWindow):
             self.pagamento_iniciado = True
             self.update_display_total()
 
+        elif func == 9:
+
+            if self.venda_aberta:
+                QMessageBox.warning(
+
+                    self,
+
+                    "Sangria",
+
+                    "Finalize ou cancele a venda antes da sangria"
+
+                )
+
+                return
+
+            from printer import CupomPrinter, load_config
+
+            config = load_config()
+
+            printer = CupomPrinter(
+
+                printer_name=config.get("printer_name"),
+
+                paper_mm=int(config.get("paper_mm", 58))
+
+            )
+
+            dlg = SangriaDialog(
+
+                caixa_id=self.caixa_id,
+
+                operador=self.operador,
+
+                printer=printer
+
+            )
+
+            dlg.exec()
+
+        elif func == 10:
+
+            if self.venda_aberta:
+                QMessageBox.warning(
+
+                    self,
+
+                    "Fechar Caixa",
+
+                    "Finalize ou cancele a venda antes de Fechar o caixa"
+
+                )
+
+                return
+
+            from printer import CupomPrinter, load_config
+            config = load_config()
+
+            printer = CupomPrinter(
+                printer_name=config.get("printer_name"),
+                paper_mm=int(config.get("paper_mm", 58))
+            )
+
+            dlg = FechamentoDialog(
+                caixa_id=self.caixa_id,
+                operador=self.operador,
+                printer=printer
+            )
+
+            if dlg.exec():
+                self.close()  # fecha PDV
+
         elif func == 11:
             self.toggle_fullscreen()
 
@@ -780,6 +853,34 @@ class PDV(QMainWindow):
                     )
                 conn.commit()
 
+
+                # AREA PARA REGISTRAR PAGAMENTO
+                total_venda = self.total_value
+                total_formas = 0
+
+                for p in self.pagamentos:
+                    forma = p["forma"]
+                    valor_pago = p["valor"]
+
+                    total_formas += valor_pago
+
+                    # dinheiro pode ter troco
+                    if forma == "Dinheiro":
+                        valor_efetivo = min(valor_pago, total_venda)
+                    else:
+                        valor_efetivo = valor_pago
+
+                    self.caixa_db.registrar_pagamento(
+                        self.caixa_id,
+                        forma,
+                        valor_efetivo
+                    )
+
+                    total_venda -= valor_efetivo
+
+                    if total_venda <= 0:
+                        break
+
                 # Area para tentar imprimir cupom
 
 
@@ -798,6 +899,8 @@ class PDV(QMainWindow):
 
                     if not printer_name:
                         raise Exception("Impressora não configurada")
+
+                    from printer import CupomPrinter
 
                     printer = CupomPrinter(
                         printer_name=printer_name,

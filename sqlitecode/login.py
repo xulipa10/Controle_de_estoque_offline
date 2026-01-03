@@ -79,7 +79,7 @@ class TelaLogin(QDialog):
             # Login bem-sucedido
             self.accept()  # Avisa que o login foi bem-sucedido e fecha a tela de login
             self.nome_usuario = operador[1]  # Armazenando o nome do operador
-            print(f"Operador logado: {self.nome_usuario}")  # Exemplo de uso do nome do operador (pode ser passado para o PDV)
+            #print(f"Operador logado: {self.nome_usuario}")
         else:
             self.show_error_message()
 
