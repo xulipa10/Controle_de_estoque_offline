@@ -1,1 +1,2 @@
-### Criação de um PDV (Caixa) com controle de estoque.
+### Criação de um PDV (Caixa) com controle de estoque. offline
+
