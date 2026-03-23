@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QInputDialog, QStackedLayout
 )
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QKeySequence, QShortcut, QFont
 
 
 DB_PATH = "Data.db"
@@ -171,10 +171,64 @@ class VendaDB:
             conn.commit()
 
 
+class ConsultaPreco(QWidget):
+    def __init__(self, db):
+        super().__init__()
+        self.db = db
+
+        self.setWindowTitle("Consulta de Preço")
+        self.setMinimumSize(500, 300)
+
+        layout = QVBoxLayout(self)
+
+        self.label_titulo = QLabel("CONSULTA DE PREÇO")
+        self.label_titulo.setAlignment(Qt.AlignCenter)
+        self.label_titulo.setFont(QFont("Arial", 20, QFont.Bold))
+
+        self.input_codigo = QLineEdit()
+        self.input_codigo.setPlaceholderText("Digite ou bip o código de barras")
+        self.input_codigo.setFont(QFont("Arial", 16))
+        self.input_codigo.returnPressed.connect(self.buscar_produto)
+
+        self.label_nome = QLabel("")
+        self.label_nome.setAlignment(Qt.AlignCenter)
+        self.label_nome.setFont(QFont("Arial", 18))
+
+        self.label_preco = QLabel("R$ 0,00")
+        self.label_preco.setAlignment(Qt.AlignCenter)
+        self.label_preco.setFont(QFont("Arial", 40, QFont.Bold))
+
+        layout.addWidget(self.label_titulo)
+        layout.addWidget(self.input_codigo)
+        layout.addWidget(self.label_nome)
+        layout.addWidget(self.label_preco)
+
+    def buscar_produto(self):
+        codigo = self.input_codigo.text().strip()
+
+        produto = self.db.buscar_por_codigo(codigo)
+
+        if not produto:
+            self.label_nome.setText("PRODUTO NÃO ENCONTRADO")
+            self.label_preco.setText("")
+            self.input_codigo.clear()
+            return
+
+        nome = produto["nome"]
+        preco = produto["venda"]
+
+        self.label_nome.setText(nome)
+        self.label_preco.setText(f"R$ {preco:.2f}")
+
+        self.input_codigo.clear()
+
+
 # ===================== PDV =====================
 class PDV(QMainWindow):
     def __init__(self, nome_operador):
         super().__init__()
+
+        self.tela_consulta = None
 
         self.config = load_config()
 
@@ -343,7 +397,7 @@ class PDV(QMainWindow):
         self.functions = [
             "F1 Abrir Venda", "F2 Ajuda", "F3 Produto",
             "F4 Cancelar Produto", "F5 Cancelar Venda", "F6 Pagamento",
-            "F7", "F8", "F9 Sangria",
+            "F7 Consultar Preço", "F8", "F9 Sangria",
             "F10 Fechar Caixa", "F11 Tela Cheia", "F12 Finalizar"
         ]
         for col, text in enumerate(self.functions):
@@ -646,6 +700,14 @@ class PDV(QMainWindow):
             self.showFullScreen()
         self.is_fullscreen = not self.is_fullscreen
 
+    def consultar_preco(self):
+        if self.tela_consulta is None:
+            self.tela_consulta = ConsultaPreco(self.db)
+
+        self.tela_consulta.show()
+        self.tela_consulta.raise_()
+        self.tela_consulta.activateWindow()
+
     # ================= Funções F1-F12 =================
     def handle_function(self, func):
 
@@ -737,6 +799,9 @@ class PDV(QMainWindow):
             self.show_message(f"Pagamento {pagamento}: R$ {valor:,.2f}")
             self.pagamento_iniciado = True
             self.update_display_total()
+
+        elif func == 7:
+            self.consultar_preco()
 
         elif func == 9:
 

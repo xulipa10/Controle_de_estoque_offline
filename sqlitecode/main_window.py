@@ -1,3 +1,5 @@
+from relatorio_financeiro import RelatorioFinanceiro
+
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QPushButton, QVBoxLayout
 )
@@ -25,22 +27,28 @@ class MenuPrincipal(QMainWindow):
         btn_estoque = QPushButton("📦 Estoque")
         btn_estoque.setMinimumHeight(80)
 
+        btn_relatorio = QPushButton("📊 Relatório Financeiro")
+        btn_relatorio.setMinimumHeight(80)
+
         btn_operadores = QPushButton("👨‍💼 Gerenciar Operadores")
         btn_operadores.setMinimumHeight(80)  # Botão para gerenciar operadores
 
         layout.addStretch()
         layout.addWidget(btn_pdv)
         layout.addWidget(btn_estoque)
+        layout.addWidget(btn_relatorio)
         layout.addWidget(btn_operadores)  # Adicionando o botão para o gerenciador
         layout.addStretch()
 
         # Conectando os botões com as funções correspondentes
         btn_pdv.clicked.connect(self.abrir_login)
         btn_estoque.clicked.connect(self.abrir_estoque)
+        btn_relatorio.clicked.connect(self.abrir_relatorio)
         btn_operadores.clicked.connect(self.abrir_operadores)  # Conectando o botão para abrir o gerenciador
 
         self.pdv_window = None
         self.estoque_window = None
+        self.relatorio_window = None
         self.operadores_window = None
 
     def abrir_login(self):
@@ -65,6 +73,13 @@ class MenuPrincipal(QMainWindow):
         self.estoque_window.show()
         self.estoque_window.raise_()
         self.estoque_window.activateWindow()
+
+    def abrir_relatorio(self):
+        if self.relatorio_window is None:
+            self.relatorio_window = RelatorioFinanceiro()
+        self.relatorio_window.show()
+        self.relatorio_window.raise_()
+        self.relatorio_window.activateWindow()
 
     # Método para abrir o Gerenciador de Operadores
     def abrir_operadores(self):
