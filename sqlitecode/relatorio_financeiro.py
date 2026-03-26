@@ -1,135 +1,149 @@
 import sqlite3
-import pandas as pd
 from datetime import datetime
-
-from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout,
-    QLabel, QPushButton, QTableWidget,
-    QTableWidgetItem
-)
-
+from PySide6.QtWidgets import QDialog, QVBoxLayout
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-
-DB_VENDAS = "Data.db"
-DB_SISTEMA = "sistema.db"
+DB_PATH = "sistema.db"
 
 
-class RelatorioFinanceiro(QMainWindow):
+class DashboardDB:
+    def __init__(self):
+        self.conn = sqlite3.connect(DB_PATH)
+
+    def dados_mes_atual(self):
+        cur = self.conn.cursor()
+
+        hoje = datetime.now()
+        inicio_mes = hoje.replace(day=1)
+
+        cur.execute("""
+            SELECT operador, data_abertura,
+                   total_dinheiro, total_credito,
+                   total_debito, total_pix
+            FROM caixa_operador
+        """)
+
+        dinheiro = credito = debito = pix = 0
+        por_dia = {}
+        por_operador = {}
+
+        for op, data_str, d, c, db, p in cur.fetchall():
+            data = datetime.strptime(data_str.split(" ")[0], "%d/%m/%Y")
+
+            if data >= inicio_mes:
+                d = d or 0
+                c = c or 0
+                db = db or 0
+                p = p or 0
+
+                dinheiro += d
+                credito += c
+                debito += db
+                pix += p
+
+                total = d + c + db + p
+
+                # vendas por dia
+                dia = data.strftime("%d/%m")
+                if dia not in por_dia:
+                    por_dia[dia] = 0
+                por_dia[dia] += total
+
+                # vendas por operador
+                if op not in por_operador:
+                    por_operador[op] = 0
+                por_operador[op] += total
+
+        return dinheiro, credito, debito, pix, por_dia, por_operador
+
+    def faturamento_por_mes(self):
+        cur = self.conn.cursor()
+
+        cur.execute("""
+            SELECT data_abertura,
+                   total_dinheiro, total_credito,
+                   total_debito, total_pix
+            FROM caixa_operador
+        """)
+
+        meses = {
+            "01": 0, "02": 0, "03": 0, "04": 0,
+            "05": 0, "06": 0, "07": 0, "08": 0,
+            "09": 0, "10": 0, "11": 0, "12": 0
+        }
+
+        for data_str, d, c, db, p in cur.fetchall():
+            data = datetime.strptime(data_str.split(" ")[0], "%d/%m/%Y")
+            mes = data.strftime("%m")
+
+            total = (d or 0) + (c or 0) + (db or 0) + (p or 0)
+            meses[mes] += total
+
+        return meses
+
+
+class DashboardWindow(QDialog):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Relatório Financeiro")
-        self.resize(900, 700)
+        self.setWindowTitle("Dashboard Financeiro")
+        self.setMinimumSize(1000, 700)
 
-        central = QWidget()
-        self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
+        layout = QVBoxLayout(self)
 
-        # Labels financeiros
-        self.lbl_faturamento = QLabel("Faturamento: R$ 0.00")
-        self.lbl_custo = QLabel("Custo: R$ 0.00")
-        self.lbl_lucro = QLabel("Lucro Bruto: R$ 0.00")
-
-        layout.addWidget(self.lbl_faturamento)
-        layout.addWidget(self.lbl_custo)
-        layout.addWidget(self.lbl_lucro)
-
-        # Tabela operador
-        self.tabela_operador = QTableWidget()
-        self.tabela_operador.setColumnCount(2)
-        self.tabela_operador.setHorizontalHeaderLabels(["Operador", "Total Vendido"])
-
-        layout.addWidget(self.tabela_operador)
-
-        # Gráfico
         self.figure = Figure()
         self.canvas = FigureCanvas(self.figure)
         layout.addWidget(self.canvas)
 
-        btn_atualizar = QPushButton("Atualizar Relatório")
-        btn_atualizar.clicked.connect(self.atualizar_relatorio)
-        layout.addWidget(btn_atualizar)
+        self.db = DashboardDB()
+        self.plotar()
 
-        self.atualizar_relatorio()
+    def plotar(self):
+        dinheiro, credito, debito, pix, por_dia, por_operador = self.db.dados_mes_atual()
+        faturamento_mes = self.db.faturamento_por_mes()
 
-    # =========================
-    # CARREGAR DADOS
-    # =========================
-    def carregar_dados(self):
-        conn = sqlite3.connect(DB_VENDAS)
+        self.figure.clear()
 
-        vendas = pd.read_sql("SELECT * FROM vendas", conn)
-        itens = pd.read_sql("SELECT * FROM itens_venda", conn)
-        produtos = pd.read_sql("SELECT codigo, custo FROM produtos", conn)
+        # Grafico 1 - Formas de pagamento
+        ax1 = self.figure.add_subplot(221)
+        ax1.pie(
+            [dinheiro, credito, debito, pix],
+            labels=["Dinheiro", "Crédito", "Débito", "PIX"],
+            autopct='%1.1f%%'
+        )
+        ax1.set_title("Vendas por Pagamento")
 
-        conn.close()
+        # Grafico 2 - Vendas por dia
+        ax2 = self.figure.add_subplot(222)
+        ax2.bar(list(por_dia.keys()), list(por_dia.values()))
+        ax2.set_title("Vendas por Dia")
+        ax2.tick_params(axis='x', rotation=45)
 
-        conn2 = sqlite3.connect(DB_SISTEMA)
-        operadores = pd.read_sql("SELECT * FROM caixa_operador", conn2)
-        conn2.close()
+        # Grafico 3 - Vendas por operador
+        ax3 = self.figure.add_subplot(223)
+        ax3.bar(list(por_operador.keys()), list(por_operador.values()))
+        ax3.set_title("Vendas por Operador")
 
-        return vendas, itens, produtos, operadores
+        # Grafico 4 - Faturamento por mês
+        ax4 = self.figure.add_subplot(224)
+        ax4.bar(list(faturamento_mes.keys()), list(faturamento_mes.values()))
+        ax4.set_title("Faturamento por Mês")
 
-    # =========================
-    # ATUALIZAR RELATÓRIO
-    # =========================
-    def atualizar_relatorio(self):
-        vendas, itens, produtos, operadores = self.carregar_dados()
+        # Grafico 4 - Faturamento por mês
+        ax4 = self.figure.add_subplot(224)
+        ax4.bar(list(faturamento_mes.keys()), list(faturamento_mes.values()))
+        ax4.set_title("Faturamento por Mês")
 
-        vendas["data"] = pd.to_datetime(vendas["data"], format="%d/%m/%Y")
-
-        mes = datetime.now().month
-        ano = datetime.now().year
-
-        vendas_mes = vendas[
-            (vendas["data"].dt.month == mes) &
-            (vendas["data"].dt.year == ano)
-        ]
-
-        faturamento = vendas_mes["total"].sum()
-
-        itens = itens.merge(produtos, on="codigo")
-        itens["custo_total"] = itens["quantidade"] * itens["custo"]
-        custo = itens["custo_total"].sum()
-
-        lucro = faturamento - custo
-
-        # Atualizar labels
-        self.lbl_faturamento.setText(f"Faturamento: R$ {faturamento:.2f}")
-        self.lbl_custo.setText(f"Custo: R$ {custo:.2f}")
-        self.lbl_lucro.setText(f"Lucro Bruto: R$ {lucro:.2f}")
-
-        # =========================
-        # RELATÓRIO POR OPERADOR
-        # =========================
-        operadores["total"] = (
-            operadores["total_dinheiro"] +
-            operadores["total_credito"] +
-            operadores["total_debito"] +
-            operadores["total_pix"]
+        # AJUSTE DE ESPAÇAMENTO
+        self.figure.subplots_adjust(
+            left=0.06,
+            right=0.97,
+            top=0.93,
+            bottom=0.08,
+            hspace=0.35,
+            wspace=0.25
         )
 
-        self.tabela_operador.setRowCount(0)
-
-        for i, row in operadores.iterrows():
-            linha = self.tabela_operador.rowCount()
-            self.tabela_operador.insertRow(linha)
-            self.tabela_operador.setItem(linha, 0, QTableWidgetItem(str(row["operador"])))
-            self.tabela_operador.setItem(linha, 1, QTableWidgetItem(f'{row["total"]:.2f}'))
-
-        # =========================
-        # GRÁFICO VENDAS POR DIA
-        # =========================
-        self.figure.clear()
-        ax = self.figure.add_subplot(111)
-
-        vendas_mes["dia"] = vendas_mes["data"].dt.day
-        vendas_dia = vendas_mes.groupby("dia")["total"].sum()
-
-        ax.bar(vendas_dia.index, vendas_dia.values)
-        ax.set_title("Vendas por Dia")
-        ax.set_xlabel("Dia")
-        ax.set_ylabel("Total")
+        self.canvas.draw()
 
         self.canvas.draw()

@@ -1,4 +1,4 @@
-from relatorio_financeiro import RelatorioFinanceiro
+from relatorio_financeiro import DashboardWindow
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QPushButton, QVBoxLayout
@@ -75,11 +75,10 @@ class MenuPrincipal(QMainWindow):
         self.estoque_window.activateWindow()
 
     def abrir_relatorio(self):
-        if self.relatorio_window is None:
-            self.relatorio_window = RelatorioFinanceiro()
-        self.relatorio_window.show()
-        self.relatorio_window.raise_()
-        self.relatorio_window.activateWindow()
+
+        dlg = DashboardWindow()
+        dlg.exec()
+
 
     # Método para abrir o Gerenciador de Operadores
     def abrir_operadores(self):
