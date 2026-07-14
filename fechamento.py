@@ -6,14 +6,14 @@ from PySide6.QtWidgets import (
     QPushButton, QMessageBox
 )
 
-DB_PATH = "sistema.db"
+DB_PATH = "data.db"
 
 
 # ===================== BANCO DO CAIXA =====================
 class CaixaDB:
     def __init__(self):
         self.conn = sqlite3.connect(DB_PATH)
-        self._create_table()
+        
 
     def listar_sangrias(self, caixa_id):
         cur = self.conn.cursor()
@@ -25,36 +25,6 @@ class CaixaDB:
                     """, (caixa_id,))
         return cur.fetchall()
 
-    def _create_table(self):
-        self.conn.execute("""
-            CREATE TABLE IF NOT EXISTS caixa_operador (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                operador TEXT NOT NULL,
-                data_abertura TEXT NOT NULL,
-                data_fechamento TEXT,
-                total_dinheiro REAL DEFAULT 0,
-                total_credito REAL DEFAULT 0,
-                total_debito REAL DEFAULT 0,
-                total_pix REAL DEFAULT 0,
-                informado_dinheiro REAL,
-                informado_credito REAL,
-                informado_debito REAL,
-                informado_pix REAL,
-                fechado INTEGER DEFAULT 0
-            )
-        """)
-        self.conn.commit()
-        self.conn.execute("""
-                          CREATE TABLE IF NOT EXISTS sangria
-                          (
-                              id INTEGER PRIMARY KEY AUTOINCREMENT,
-                              caixa_id INTEGER NOT NULL,
-                              valor REAL NOT NULL,
-                              data TEXT NOT NULL,
-                              motivo TEXT
-                          )
-                          """)
-        self.conn.commit()
 
     def total_sangrias(self, caixa_id):
         cur = self.conn.cursor()

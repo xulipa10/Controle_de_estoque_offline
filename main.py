@@ -2,8 +2,11 @@ import sys
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
 from main_window import MenuPrincipal
+from db_config import criar_tabelas
 
 if __name__ == "__main__":
+
+    criar_tabelas()
 
 
     app = QApplication(sys.argv)

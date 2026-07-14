@@ -1,4 +1,5 @@
 import sys
+import os
 import sqlite3
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel,
@@ -8,14 +9,14 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-DB_PATH = "Data.db"
+DB_PATH = os.path.join(os.getcwd(), "data.db")
 
 
 # ===================== GERENCIADOR DE PRODUTOS (SQLite) =====================
 class ProdutoDB:
     def __init__(self, db_path):
         self.db_path = db_path
-        self._init_db()
+        
 
     def excluir_por_codigo(self, codigo):
         with self._connect() as conn:
@@ -28,20 +29,7 @@ class ProdutoDB:
     def _connect(self):
         return sqlite3.connect(self.db_path)
 
-    def _init_db(self):
-        with self._connect() as conn:
-            conn.execute("""
-                         CREATE TABLE IF NOT EXISTS produtos
-                         (
-                             id INTEGER PRIMARY KEY AUTOINCREMENT,
-                             codigo TEXT UNIQUE NOT NULL,
-                             nome TEXT NOT NULL,
-                             quantidade REAL NOT NULL,
-                             custo REAL NOT NULL,
-                             venda REAL NOT NULL,
-                             por_peso INTEGER DEFAULT 0
-                         )
-                         """)
+            
 
     def carregar(self):
         with self._connect() as conn:

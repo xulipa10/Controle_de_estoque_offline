@@ -8,39 +8,13 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-DB_PATH = "sistema.db"
+DB_PATH = "data.db"
 
 # ===================== BANCO DE DADOS =====================
 class Database:
     def __init__(self):
         self.conn = sqlite3.connect(DB_PATH)
-        self.create_tables()
-
-    def create_tables(self):
-        cur = self.conn.cursor()
-
-        # operadores
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS operadores (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nome TEXT UNIQUE NOT NULL,
-                senha TEXT NOT NULL
-            )
-        """)
-
-        # vendas por operador (futuro PDV)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS vendas_operador (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                operador_id INTEGER,
-                total REAL,
-                data TEXT,
-                forma_pagamento TEXT,
-                fechado INTEGER DEFAULT 0
-            )
-        """)
-
-        self.conn.commit()
+        
 
     # CRUD OPERADOR
     def criar_operador(self, nome, senha):

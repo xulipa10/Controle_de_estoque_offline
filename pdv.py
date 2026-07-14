@@ -1,5 +1,6 @@
 
 from printer import load_config
+import os
 from fechamento import CaixaDB, FechamentoDialog, SangriaDialog
 import sqlite3
 from datetime import datetime
@@ -13,31 +14,17 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut, QFont
 
-
-DB_PATH = "Data.db"
+DB_PATH = os.path.join(os.getcwd(), "data.db")
 
 
 # ===================== GERENCIADOR DE PRODUTOS (SQLITE) =====================
 class ProdutoDB:
     def __init__(self, db_path):
         self.db_path = db_path
-        self._init_db()
 
     def _connect(self):
         return sqlite3.connect(self.db_path)
-
-    def _init_db(self):
-        with self._connect() as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS produtos (
-                    codigo TEXT PRIMARY KEY,
-                    nome TEXT NOT NULL,
-                    quantidade REAL NOT NULL,
-                    custo REAL NOT NULL,
-                    venda REAL NOT NULL,
-                    por_peso INTEGER DEFAULT 0
-                )
-            """)
+        
 
     def buscar_por_codigo(self, codigo):
         with self._connect() as conn:
@@ -62,67 +49,11 @@ class ProdutoDB:
 class VendaDB:
     def __init__(self, db_path):
         self.db_path = db_path
-        self._init_db()
+        
 
     def _connect(self):
         return sqlite3.connect(self.db_path)
 
-    def _init_db(self):
-        with self._connect() as conn:
-            conn.execute("""
-                         CREATE TABLE IF NOT EXISTS vendas
-                         (
-                             id
-                             INTEGER
-                             PRIMARY
-                             KEY
-                             AUTOINCREMENT,
-                             data
-                             TEXT,
-                             hora
-                             TEXT,
-                             total
-                             REAL
-                         )
-                         """)
-            conn.execute("""
-                         CREATE TABLE IF NOT EXISTS itens_venda
-                         (
-                             id
-                             INTEGER
-                             PRIMARY
-                             KEY
-                             AUTOINCREMENT,
-                             venda_id
-                             INTEGER,
-                             codigo
-                             TEXT,
-                             descricao
-                             TEXT,
-                             quantidade
-                             INTEGER,
-                             unitario
-                             REAL,
-                             total
-                             REAL
-                         )
-                         """)
-            conn.execute("""
-                         CREATE TABLE IF NOT EXISTS pagamentos_venda
-                         (
-                             id
-                             INTEGER
-                             PRIMARY
-                             KEY
-                             AUTOINCREMENT,
-                             venda_id
-                             INTEGER,
-                             forma
-                             TEXT,
-                             valor
-                             REAL
-                         )
-                         """)
 
     def salvar_venda(self, total, itens, pagamentos):
         now = datetime.now()

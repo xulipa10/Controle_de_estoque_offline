@@ -7,25 +7,13 @@ from PySide6.QtCore import Qt
 import sqlite3
 
 # Banco de dados
-DB_PATH = "sistema.db"
+DB_PATH = "data.db"
 
 class Database:
     def __init__(self):
         self.conn = sqlite3.connect(DB_PATH)
-        self.create_tables()
 
-    def create_tables(self):
-        cur = self.conn.cursor()
-
-        # Tabela de operadores
-        cur.execute(""" 
-            CREATE TABLE IF NOT EXISTS operadores (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nome TEXT UNIQUE NOT NULL,
-                senha TEXT NOT NULL
-            )
-        """)
-        self.conn.commit()
+    
 
     def validar_login(self, nome, senha):
         """Valida o login do operador no banco de dados"""

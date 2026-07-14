@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QDialog, QVBoxLayout
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-DB_PATH = "sistema.db"
+DB_PATH = "data.db"
 
 
 class DashboardDB:
@@ -103,14 +103,22 @@ class DashboardWindow(QDialog):
         faturamento_mes = self.db.faturamento_por_mes()
 
         self.figure.clear()
+        #teste de valores
+        print(dinheiro, credito, debito, pix)
 
         # Grafico 1 - Formas de pagamento
         ax1 = self.figure.add_subplot(221)
+
+        if dinheiro and credito and debito and pix < 1:
+            dinheiro, credito, debito, pix = 1.0
+            
+    
         ax1.pie(
             [dinheiro, credito, debito, pix],
             labels=["Dinheiro", "Crédito", "Débito", "PIX"],
             autopct='%1.1f%%'
-        )
+                )
+            
         ax1.set_title("Vendas por Pagamento")
 
         # Grafico 2 - Vendas por dia
